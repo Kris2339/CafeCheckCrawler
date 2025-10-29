@@ -95,28 +95,32 @@ def search_naver(keyword):
 def find_popular_posts_section(html, search_url):
     soup = BeautifulSoup(html, "html.parser")
 
-    # 1) data-lb-trigger가 /p/ugc로 시작하는 앵커
-    a = soup.select_one('a[data-lb-trigger^="/p/ugc"]')
-    if a:
-        return {
-            "found": True,
-            "title": "인기글",
-            "more_url": a.get("data-lb-trigger"),
-            "referer": search_url
-        }
+    # 1) data-lb-trigger가 /p/intentblock 또는 /p/ugc로 시작하는 앵커
+    for prefix in ['/p/intentblock', '/p/ugc']:
+        a = soup.select_one(f'a[data-lb-trigger^="{prefix}"]')
+        if a:
+            debug_print(f"더보기 발견 (data-lb-trigger): {a.get('data-lb-trigger')[:80]}")
+            return {
+                "found": True,
+                "title": "인기글",
+                "more_url": a.get("data-lb-trigger"),
+                "referer": search_url
+            }
 
-    # 2) href가 /p/ugc로 시작
-    a = soup.select_one('a[href^="/p/ugc"]')
-    if a:
-        return {
-            "found": True,
-            "title": "인기글",
-            "more_url": a.get("href"),
-            "referer": search_url
-        }
+    # 2) href가 /p/intentblock 또는 /p/ugc로 시작
+    for prefix in ['/p/intentblock', '/p/ugc']:
+        a = soup.select_one(f'a[href^="{prefix}"]')
+        if a:
+            debug_print(f"더보기 발견 (href): {a.get('href')[:80]}")
+            return {
+                "found": True,
+                "title": "인기글",
+                "more_url": a.get("href"),
+                "referer": search_url
+            }
 
     # 3) '인기글' 텍스트 기준
-    for el in soup.find_all(text=lambda t: t and "인기글" in t):
+    for el in soup.find_all(string=lambda t: t and "인기글" in t):
         blk = None
         for parent in (el.parent, el.parent and el.parent.parent):
             if getattr(parent, "name", None):
@@ -129,7 +133,8 @@ def find_popular_posts_section(html, search_url):
                 a = s.find_parent("a")
                 if a and (a.get("data-lb-trigger") or a.get("href")):
                     more = a.get("data-lb-trigger") or a.get("href")
-                    if more and more != "#":
+                    if more and more != "#" and ("/intentblock" in more or "/ugc" in more):
+                        debug_print(f"더보기 발견 (더보기 버튼): {more[:80]}")
                         return {
                             "found": True,
                             "title": "인기글",
@@ -137,18 +142,33 @@ def find_popular_posts_section(html, search_url):
                             "referer": search_url
                         }
 
-        a = ctx.find("a", attrs={"data-lb-trigger": True})
-        if a:
-            return {
-                "found": True,
-                "title": "인기글",
-                "more_url": a.get("data-lb-trigger"),
-                "referer": search_url
-            }
+        # data-lb-trigger가 있는 앵커 중 intentblock이나 ugc 포함
+        for a in ctx.find_all("a", attrs={"data-lb-trigger": True}):
+            trigger = a.get("data-lb-trigger", "")
+            if "/intentblock" in trigger or "/ugc" in trigger:
+                debug_print(f"더보기 발견 (data-lb-trigger 검색): {trigger[:80]}")
+                return {
+                    "found": True,
+                    "title": "인기글",
+                    "more_url": trigger,
+                    "referer": search_url
+                }
 
-    # 4) 정규식
-    m = re.search(r'["\'](/p/[^"\']+)["\']', html)
+    # 4) 정규식 - intentblock 또는 ugc를 포함하는 URL만
+    m = re.search(r'["\'](/p/(?:intentblock|ugc)/[^"\']+)["\']', html)
     if m:
+        debug_print(f"더보기 발견 (정규식): {m.group(1)[:80]}")
+        return {
+            "found": True,
+            "title": "인기글",
+            "more_url": m.group(1),
+            "referer": search_url
+        }
+
+    # 5) 더 관대한 정규식 - 긴 URL만 (최소 30자)
+    m = re.search(r'["\'](/p/[^"\']{30,})["\']', html)
+    if m:
+        debug_print(f"더보기 발견 (긴 URL): {m.group(1)[:80]}")
         return {
             "found": True,
             "title": "인기글",
