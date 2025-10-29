@@ -95,87 +95,76 @@ def search_naver(keyword):
 def find_popular_posts_section(html, search_url):
     soup = BeautifulSoup(html, "html.parser")
 
-    # 1) data-lb-trigger가 /p/intentblock 또는 /p/ugc로 시작하는 앵커
-    for prefix in ['/p/intentblock', '/p/ugc']:
-        a = soup.select_one(f'a[data-lb-trigger^="{prefix}"]')
-        if a:
-            debug_print(f"더보기 발견 (data-lb-trigger): {a.get('data-lb-trigger')[:80]}")
+    # 1) data-lb-trigger 속성이 있는 모든 앵커에서 intentblock/ugc 찾기 (절대/상대 경로 모두)
+    all_triggers = soup.find_all("a", attrs={"data-lb-trigger": True})
+    debug_print(f"data-lb-trigger 속성 발견: {len(all_triggers)}개")
+
+    for a in all_triggers:
+        trigger = a.get("data-lb-trigger", "")
+        # intentblock 또는 ugc를 포함하는 URL
+        if ("/intentblock" in trigger or "/ugc" in trigger) and len(trigger) > 20:
+            debug_print(f"더보기 발견 (data-lb-trigger): {trigger[:100]}")
             return {
                 "found": True,
                 "title": "인기글",
-                "more_url": a.get("data-lb-trigger"),
+                "more_url": trigger,
                 "referer": search_url
             }
 
-    # 2) href가 /p/intentblock 또는 /p/ugc로 시작
-    for prefix in ['/p/intentblock', '/p/ugc']:
-        a = soup.select_one(f'a[href^="{prefix}"]')
-        if a:
-            debug_print(f"더보기 발견 (href): {a.get('href')[:80]}")
+    # 2) href가 intentblock 또는 ugc를 포함
+    for a in soup.find_all("a", href=True):
+        href = a.get("href", "")
+        if ("/intentblock" in href or "/ugc" in href) and len(href) > 20:
+            debug_print(f"더보기 발견 (href): {href[:100]}")
             return {
                 "found": True,
                 "title": "인기글",
-                "more_url": a.get("href"),
+                "more_url": href,
                 "referer": search_url
             }
 
-    # 3) '인기글' 텍스트 기준
+    # 3) 정규식 - 절대 경로 URL (https://s.search.naver.com/p/intentblock/...)
+    patterns = [
+        r'["\']?(https://s\.search\.naver\.com/p/(?:intentblock|ugc)/[^"\'>\s]+)["\']?',
+        r'["\']?(https://search\.naver\.com/p/(?:intentblock|ugc)/[^"\'>\s]+)["\']?',
+        r'["\'](/p/(?:intentblock|ugc)/[^"\']+)["\']',
+    ]
+
+    for pattern in patterns:
+        m = re.search(pattern, html)
+        if m:
+            url = m.group(1)
+            debug_print(f"더보기 발견 (정규식 {pattern[:30]}...): {url[:100]}")
+            return {
+                "found": True,
+                "title": "인기글",
+                "more_url": url,
+                "referer": search_url
+            }
+
+    # 4) '인기글' 텍스트 주변에서 찾기
     for el in soup.find_all(string=lambda t: t and "인기글" in t):
-        blk = None
-        for parent in (el.parent, el.parent and el.parent.parent):
-            if getattr(parent, "name", None):
-                blk = parent
+        # 부모 요소들 탐색
+        current = el.parent
+        for _ in range(10):  # 최대 10단계 위로
+            if not current:
                 break
-        ctx = blk or soup
 
-        for s in ctx.find_all("span"):
-            if s.string and "더보기" in s.string:
-                a = s.find_parent("a")
-                if a and (a.get("data-lb-trigger") or a.get("href")):
-                    more = a.get("data-lb-trigger") or a.get("href")
-                    if more and more != "#" and ("/intentblock" in more or "/ugc" in more):
-                        debug_print(f"더보기 발견 (더보기 버튼): {more[:80]}")
-                        return {
-                            "found": True,
-                            "title": "인기글",
-                            "more_url": more,
-                            "referer": search_url
-                        }
+            # 현재 요소와 하위 요소에서 data-lb-trigger 찾기
+            for a in current.find_all("a", attrs={"data-lb-trigger": True}, limit=5):
+                trigger = a.get("data-lb-trigger", "")
+                if "/intentblock" in trigger or "/ugc" in trigger:
+                    debug_print(f"더보기 발견 (인기글 주변): {trigger[:100]}")
+                    return {
+                        "found": True,
+                        "title": "인기글",
+                        "more_url": trigger,
+                        "referer": search_url
+                    }
 
-        # data-lb-trigger가 있는 앵커 중 intentblock이나 ugc 포함
-        for a in ctx.find_all("a", attrs={"data-lb-trigger": True}):
-            trigger = a.get("data-lb-trigger", "")
-            if "/intentblock" in trigger or "/ugc" in trigger:
-                debug_print(f"더보기 발견 (data-lb-trigger 검색): {trigger[:80]}")
-                return {
-                    "found": True,
-                    "title": "인기글",
-                    "more_url": trigger,
-                    "referer": search_url
-                }
+            current = current.parent if hasattr(current, 'parent') else None
 
-    # 4) 정규식 - intentblock 또는 ugc를 포함하는 URL만
-    m = re.search(r'["\'](/p/(?:intentblock|ugc)/[^"\']+)["\']', html)
-    if m:
-        debug_print(f"더보기 발견 (정규식): {m.group(1)[:80]}")
-        return {
-            "found": True,
-            "title": "인기글",
-            "more_url": m.group(1),
-            "referer": search_url
-        }
-
-    # 5) 더 관대한 정규식 - 긴 URL만 (최소 30자)
-    m = re.search(r'["\'](/p/[^"\']{30,})["\']', html)
-    if m:
-        debug_print(f"더보기 발견 (긴 URL): {m.group(1)[:80]}")
-        return {
-            "found": True,
-            "title": "인기글",
-            "more_url": m.group(1),
-            "referer": search_url
-        }
-
+    debug_print("더보기 URL을 찾을 수 없음")
     return {"found": False, "more_url": None, "referer": search_url}
 
 def fetch_more_page(url, referer=None):
