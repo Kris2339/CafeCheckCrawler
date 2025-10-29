@@ -1,0 +1,30 @@
+# Generated HTML files
+*.html
+!templates/**/*.html
+
+# Debug output
+debug_output/
+
+# Excel output files
+크롤링_결과_*.xlsx
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
