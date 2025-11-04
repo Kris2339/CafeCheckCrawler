@@ -28,3 +28,17 @@ ENV/
 # OS
 .DS_Store
 Thumbs.db
+
+# Environment variables
+.env
+.env.local
+
+# Streamlit cache
+.streamlit/
+
+# Temporary uploaded files
+/tmp/*.jpg
+/tmp/*.jpeg
+/tmp/*.png
+/tmp/*.mp4
+/tmp/*.mov
